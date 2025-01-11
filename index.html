@@ -200,15 +200,13 @@ body {
   <button id="nextBtn" style="display: none;">Next</button>
 
   <script>
-   const clientId = 'cc1434a8593d4c71b9ad56af9b578d98';
-const redirectUri = 'https://bootlifexu.github.io/spofy';
-let accessToken = null;
-let offset = 0;
+   // Global variables
+let accessToken = 'YOUR_ACCESS_TOKEN';  // Replace with actual token if available
 
+// Function to clean the Spotify URL
 function cleanSpotifyUrl(url) {
   console.log('Original URL:', url);
-  // Updated regex to handle 22-character Spotify IDs
-  const matches = url.match(/spotify\.com\/(track|album|playlist)\/([a-zA-Z0-9]{22})/);
+  const matches = url.match(/spotify\.com\/(track|album|playlist|artist)\/([a-zA-Z0-9]{22})/);
   console.log('URL matches:', matches);
   if (matches) {
     const result = {
@@ -222,51 +220,34 @@ function cleanSpotifyUrl(url) {
   return null;
 }
 
-function updateAuthStatus(message, isError = false) {
-  const statusEl = document.getElementById('auth-status');
-  statusEl.textContent = message;
-  statusEl.className = isError ? 'error' : '';
-}
+// Function to handle regular search
+async function searchSong(query) {
+  console.log('Performing regular search for:', query);
+  try {
+    const response = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track,album,artist,playlist&limit=5`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+      }
+    });
 
-function initiateSpotifyAuth() {
-  const scopes = [
-    'user-library-read',
-    'playlist-read-private',
-    'playlist-read-collaborative',
-    'user-read-playback-state',
-    'user-modify-playback-state',
-    'streaming',
-    'user-read-currently-playing',
-  ];
-  const authUrl = `https://accounts.spotify.com/authorize?` +
-    `client_id=${clientId}` +
-    `&response_type=token` +
-    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&scope=${encodeURIComponent(scopes.join(' '))}` +
-    `&show_dialog=true`;
-  window.location.href = authUrl;
-}
+    console.log('Search response status:', response.status);
+    if (!response.ok) {
+      console.log('Error with search response:', await response.text());
+      throw new Error('Failed to search Spotify');
+    }
 
-function parseAccessToken() {
-  const hash = window.location.hash.substring(1);
-  const params = new URLSearchParams(hash);
-  const token = params.get('access_token');
-  const expiresIn = params.get('expires_in');
-
-  if (token) {
-    accessToken = token;
-    localStorage.setItem('spotify_access_token', token);
-    localStorage.setItem('spotify_token_expiry', Date.now() + expiresIn * 1000);
-    window.history.replaceState(null, null, window.location.pathname);
-    updateAuthStatus('Successfully authenticated');
-    return true;
+    const data = await response.json();
+    console.log('Search results:', data);
+    displaySearchResults(data);
+  } catch (error) {
+    console.error('Search error:', error);
+    updateAuthStatus(`Error searching for ${query}: ${error.message}`, true);
   }
-  return false;
 }
 
+// Function to fetch track data by ID
 async function fetchTrackById(trackId) {
   console.log('Fetching track with ID:', trackId);
-  
   if (!accessToken) {
     console.log('No access token found');
     updateAuthStatus('Authentication required', true);
@@ -276,28 +257,29 @@ async function fetchTrackById(trackId) {
 
   try {
     const response = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, {
-      headers: { 'Authorization': `Bearer ${accessToken}` },
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+      }
     });
 
     console.log('Response status:', response.status);
-
     if (!response.ok) {
-      console.log('Response not OK:', await response.text());
-      throw new Error(`HTTP error! status: ${response.status}`);
+      console.log('Error fetching track:', await response.text());
+      throw new Error(`Failed to fetch track with ID: ${trackId}`);
     }
 
     const track = await response.json();
-    console.log('Received track data:', track);
-    displayTracks([track]);
+    console.log('Fetched track data:', track);
+    displayTrackDetails(track);
   } catch (error) {
-    console.error('Error in fetchTrackById:', error);
+    console.error('Track fetch error:', error);
     updateAuthStatus(`Error fetching track: ${error.message}`, true);
   }
 }
 
+// Function to fetch album data by ID
 async function fetchAlbumById(albumId) {
   console.log('Fetching album with ID:', albumId);
-  
   if (!accessToken) {
     console.log('No access token found');
     updateAuthStatus('Authentication required', true);
@@ -306,40 +288,30 @@ async function fetchAlbumById(albumId) {
   }
 
   try {
-    const response = await fetch(`https://api.spotify.com/v1/albums/${albumId}/tracks`, {
-      headers: { 'Authorization': `Bearer ${accessToken}` },
+    const response = await fetch(`https://api.spotify.com/v1/albums/${albumId}`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+      }
     });
 
     console.log('Response status:', response.status);
-
     if (!response.ok) {
-      console.log('Response not OK:', await response.text());
-      throw new Error(`HTTP error! status: ${response.status}`);
+      console.log('Error fetching album:', await response.text());
+      throw new Error(`Failed to fetch album with ID: ${albumId}`);
     }
 
-    const data = await response.json();
-    console.log('Received album data:', data);
-    const tracks = data.items;
-    displayTracks(tracks);
-
-    document.getElementById('nextBtn').style.display = 'none';
+    const album = await response.json();
+    console.log('Fetched album data:', album);
+    displayAlbumDetails(album);
   } catch (error) {
-    console.error('Error in fetchAlbumById:', error);
+    console.error('Album fetch error:', error);
     updateAuthStatus(`Error fetching album: ${error.message}`, true);
   }
 }
 
+// Function to fetch playlist data by ID
 async function fetchPlaylistById(playlistId) {
   console.log('Fetching playlist with ID:', playlistId);
-  console.log('Current offset:', offset);
-  
-  // Validate playlist ID format
-  if (!playlistId || playlistId.length !== 22) {
-    console.error('Invalid playlist ID format');
-    updateAuthStatus('Invalid playlist ID format', true);
-    return;
-  }
-
   if (!accessToken) {
     console.log('No access token found');
     updateAuthStatus('Authentication required', true);
@@ -348,176 +320,126 @@ async function fetchPlaylistById(playlistId) {
   }
 
   try {
-    const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50&offset=${offset}`;
-    console.log('Making request to:', url);
-    
-    const response = await fetch(url, {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
+    const response = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+      }
     });
 
     console.log('Response status:', response.status);
-    
     if (!response.ok) {
-      console.log('Response not OK:', await response.text());
-      throw new Error(`HTTP error! status: ${response.status}`);
+      console.log('Error fetching playlist:', await response.text());
+      throw new Error(`Failed to fetch playlist with ID: ${playlistId}`);
     }
 
-    const data = await response.json();
-    console.log('Received playlist data:', data);
-    
-    // Filter out null tracks and map to the track object
-    const tracks = data.items
-      .filter(item => item.track != null)
-      .map(item => item.track);
-    
-    console.log('Processed tracks:', tracks);
-    displayTracks(tracks);
-
-    // Show/hide next button based on whether there are more tracks
-    const nextBtn = document.getElementById('nextBtn');
-    nextBtn.style.display = data.next ? 'block' : 'none';
-
+    const playlist = await response.json();
+    console.log('Fetched playlist data:', playlist);
+    displayPlaylistDetails(playlist);
   } catch (error) {
-    console.error('Error in fetchPlaylistById:', error);
+    console.error('Playlist fetch error:', error);
     updateAuthStatus(`Error fetching playlist: ${error.message}`, true);
   }
 }
 
-async function searchSong(query) {
-  console.log('Searching for:', query);
-  
+// Function to fetch artist data by ID
+async function fetchArtistById(artistId) {
+  console.log('Fetching artist with ID:', artistId);
   if (!accessToken) {
     console.log('No access token found');
     updateAuthStatus('Authentication required', true);
     initiateSpotifyAuth();
-    return [];
+    return;
   }
 
   try {
-    const response = await fetch(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=10`,
-      {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
+    const response = await fetch(`https://api.spotify.com/v1/artists/${artistId}/top-tracks?market=US`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
       }
-    );
+    });
 
     console.log('Response status:', response.status);
-
     if (!response.ok) {
-      console.log('Response not OK:', await response.text());
-      throw new Error('Search failed');
+      console.log('Error fetching artist:', await response.text());
+      throw new Error(`Failed to fetch artist with ID: ${artistId}`);
     }
 
     const data = await response.json();
-    console.log('Search results:', data);
-    return data.tracks.items;
+    console.log('Fetched artist data:', data);
+    displayArtistDetails(data);
   } catch (error) {
-    console.error('Error in searchSong:', error);
-    updateAuthStatus('Error searching: ' + error.message, true);
-    return [];
+    console.error('Artist fetch error:', error);
+    updateAuthStatus(`Error fetching artist: ${error.message}`, true);
   }
 }
 
-function createEmbedPlayer(track) {
-  const iframe = document.createElement('iframe');
-  iframe.src = `https://open.spotify.com/embed/track/${track.id}`;
-  iframe.width = '300';
-  iframe.height = '80';
-  iframe.frameBorder = '0';
-  iframe.allow = 'encrypted-media';
-  return iframe;
-}
-
-function displayTracks(tracks) {
-  console.log('Displaying tracks:', tracks);
-  const resultsDiv = document.getElementById('results');
-  resultsDiv.innerHTML = '';
-
-  if (!tracks || tracks.length === 0) {
-    resultsDiv.innerHTML = '<p>No tracks found.</p>';
-    return;
-  }
-
-  tracks.forEach(track => {
-    if (track) {
-      const trackDiv = document.createElement('div');
-      trackDiv.innerHTML = `
-        <p><strong>${track.name}</strong> by ${track.artists.map(artist => artist.name).join(", ")}</p>
-        <p>Album: ${track.album.name}</p>
-      `;
-      const embedPlayer = createEmbedPlayer(track);
-      trackDiv.appendChild(embedPlayer);
-      resultsDiv.appendChild(trackDiv);
-    }
-  });
-}
-
-async function handleSearch() {
+// Function to handle input and trigger either search or URL processing
+async function handleInput() {
   const input = document.getElementById('songInput').value.trim();
-  console.log('Search input:', input);
-  
-  if (!input) {
-    updateAuthStatus('Please enter a song name or Spotify link', true);
-    return;
-  }
-
   const spotifyUrl = cleanSpotifyUrl(input);
-  console.log('Processed Spotify URL:', spotifyUrl);
-  
+
   if (spotifyUrl) {
-    offset = 0; // Reset offset when starting a new search
-    console.log('URL type:', spotifyUrl.type);
-    
+    // Process as URL (track, album, playlist, artist)
     switch (spotifyUrl.type) {
-      case 'playlist':
-        console.log('Handling playlist URL');
-        await fetchPlaylistById(spotifyUrl.id);
-        break;
       case 'track':
-        console.log('Handling track URL');
         await fetchTrackById(spotifyUrl.id);
         break;
       case 'album':
-        console.log('Handling album URL');
         await fetchAlbumById(spotifyUrl.id);
+        break;
+      case 'playlist':
+        await fetchPlaylistById(spotifyUrl.id);
+        break;
+      case 'artist':
+        await fetchArtistById(spotifyUrl.id);
         break;
     }
   } else {
-    console.log('Performing regular search');
-    const tracks = await searchSong(input);
-    displayTracks(tracks);
+    // Regular search - search for track, album, or artist
+    await searchSong(input);
   }
 }
 
-window.onload = function() {
-  if (!parseAccessToken()) {
-    accessToken = localStorage.getItem('spotify_access_token');
-    if (accessToken) {
-      updateAuthStatus('Cached token found');
-    } else {
-      updateAuthStatus('Please authenticate', true);
-    }
-  }
+// Function to display the search results
+function displaySearchResults(data) {
+  console.log('Displaying search results:', data);
+  // Implement the UI logic to display search results
+}
 
-  // Add event listeners
-  document.getElementById('searchBtn').addEventListener('click', handleSearch);
-  
-  document.getElementById('nextBtn').addEventListener('click', async () => {
-    const input = document.getElementById('songInput').value.trim();
-    const spotifyUrl = cleanSpotifyUrl(input);
-    
-    if (spotifyUrl && spotifyUrl.type === 'playlist') {
-      await fetchPlaylistById(spotifyUrl.id);
-    }
-  });
+// Function to display track details
+function displayTrackDetails(track) {
+  console.log('Displaying track details:', track);
+  // Implement the UI logic to display track details
+}
 
-  // Add enter key support
-  document.getElementById('songInput').addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-      handleSearch();
-    }
-  });
-};
+// Function to display album details
+function displayAlbumDetails(album) {
+  console.log('Displaying album details:', album);
+  // Implement the UI logic to display album details
+}
+
+// Function to display playlist details
+function displayPlaylistDetails(playlist) {
+  console.log('Displaying playlist details:', playlist);
+  // Implement the UI logic to display playlist details
+}
+
+// Function to display artist details
+function displayArtistDetails(data) {
+  console.log('Displaying artist details:', data);
+  // Implement the UI logic to display artist details
+}
+
+// Function to update authentication status
+function updateAuthStatus(message, isError = false) {
+  const statusElement = document.getElementById('authStatus');
+  statusElement.textContent = message;
+  statusElement.style.color = isError ? 'red' : 'green';
+}
+
+// Example: Call handleInput when user clicks a button
+document.getElementById('searchButton').addEventListener('click', handleInput);
+
   </script>
 </body>
 </html>
