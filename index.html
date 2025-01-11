@@ -200,10 +200,23 @@ body {
   <button id="nextBtn" style="display: none;">Next</button>
 
   <script>
-const clientId = 'cc1434a8593d4c71b9ad56af9b578d98'; // Your actual Spotify Client ID
-const redirectUri = 'https://dazzling-bavarois-ed00a0.netlify.app'; // Your actual Redirect URI
+   const clientId = 'cc1434a8593d4c71b9ad56af9b578d98';
+const redirectUri = 'https://dazzling-bavarois-ed00a0.netlify.app';
 let accessToken = null;
-let offset = 0; // Pagination offset for playlists
+let offset = 0;
+
+// Helper function to clean Spotify URLs
+function cleanSpotifyUrl(url) {
+  // Extract the base ID by removing query parameters
+  const matches = url.match(/spotify\.com\/(track|album|playlist)\/([a-zA-Z0-9]+)/);
+  if (matches) {
+    return {
+      type: matches[1],
+      id: matches[2]
+    };
+  }
+  return null;
+}
 
 function updateAuthStatus(message, isError = false) {
   const statusEl = document.getElementById('auth-status');
@@ -259,12 +272,13 @@ async function fetchTrackById(trackId) {
       headers: { 'Authorization': `Bearer ${accessToken}` },
     });
 
-    if (!response.ok) throw new Error('Failed to fetch track details');
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
     const track = await response.json();
-    displayTracks([track]); // Wrap in an array to reuse the display logic
+    displayTracks([track]);
   } catch (error) {
-    updateAuthStatus('Error fetching track: ' + error.message, true);
+    console.error('Error fetching track:', error);
+    updateAuthStatus(`Error fetching track: ${error.message}`, true);
   }
 }
 
@@ -280,15 +294,16 @@ async function fetchAlbumById(albumId) {
       headers: { 'Authorization': `Bearer ${accessToken}` },
     });
 
-    if (!response.ok) throw new Error('Failed to fetch album details');
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
     const data = await response.json();
-    const tracks = data.items; // Extract tracks from the album
+    const tracks = data.items;
     displayTracks(tracks);
 
-    document.getElementById('nextBtn').style.display = 'none'; // Disable pagination for albums
+    document.getElementById('nextBtn').style.display = 'none';
   } catch (error) {
-    updateAuthStatus('Error fetching album: ' + error.message, true);
+    console.error('Error fetching album:', error);
+    updateAuthStatus(`Error fetching album: ${error.message}`, true);
   }
 }
 
@@ -300,25 +315,58 @@ async function fetchPlaylistById(playlistId) {
   }
 
   try {
-    const response = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50&offset=${offset}`, {
-      headers: { 'Authorization': `Bearer ${accessToken}` },
-    });
+    const response = await fetch(
+      `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50&offset=${offset}`,
+      {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      }
+    );
 
-    if (!response.ok) throw new Error('Failed to fetch playlist details');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
 
     const data = await response.json();
-    const tracks = data.items.map(item => item.track); // Extract tracks
+    
+    // Filter out null tracks and map to the track object
+    const tracks = data.items
+      .filter(item => item.track != null)
+      .map(item => item.track);
+
     displayTracks(tracks);
 
-    // Handle pagination if there are more tracks
-    if (data.next) {
-      offset += 50; // Increase offset for next page
-      document.getElementById('nextBtn').style.display = 'block';
-    } else {
-      document.getElementById('nextBtn').style.display = 'none';
-    }
+    // Show/hide next button based on whether there are more tracks
+    const nextBtn = document.getElementById('nextBtn');
+    nextBtn.style.display = data.next ? 'block' : 'none';
+
   } catch (error) {
-    updateAuthStatus('Error fetching playlist: ' + error.message, true);
+    console.error('Error fetching playlist:', error);
+    updateAuthStatus(`Error fetching playlist: ${error.message}`, true);
+  }
+}
+
+async function searchSong(query) {
+  if (!accessToken) {
+    updateAuthStatus('Authentication required', true);
+    initiateSpotifyAuth();
+    return [];
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=10`,
+      {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      }
+    );
+
+    if (!response.ok) throw new Error('Search failed');
+
+    const data = await response.json();
+    return data.tracks.items;
+  } catch (error) {
+    updateAuthStatus('Error searching: ' + error.message, true);
+    return [];
   }
 }
 
@@ -334,7 +382,7 @@ function createEmbedPlayer(track) {
 
 function displayTracks(tracks) {
   const resultsDiv = document.getElementById('results');
-  resultsDiv.innerHTML = ''; // Clear previous results
+  resultsDiv.innerHTML = '';
 
   if (tracks.length === 0) {
     resultsDiv.innerHTML = '<p>No tracks found.</p>';
@@ -351,11 +399,40 @@ function displayTracks(tracks) {
     trackDiv.appendChild(embedPlayer);
     resultsDiv.appendChild(trackDiv);
   });
-
-  document.getElementById('nextBtn').style.display = 'none'; // Disable pagination for Spotify links
 }
 
-window.onload = function () {
+async function handleSearch() {
+  const input = document.getElementById('songInput').value.trim();
+  
+  if (!input) {
+    updateAuthStatus('Please enter a song name or Spotify link', true);
+    return;
+  }
+
+  const spotifyUrl = cleanSpotifyUrl(input);
+  
+  if (spotifyUrl) {
+    offset = 0; // Reset offset when starting a new search
+    
+    switch (spotifyUrl.type) {
+      case 'playlist':
+        await fetchPlaylistById(spotifyUrl.id);
+        break;
+      case 'track':
+        await fetchTrackById(spotifyUrl.id);
+        break;
+      case 'album':
+        await fetchAlbumById(spotifyUrl.id);
+        break;
+    }
+  } else {
+    // Handle regular search
+    const tracks = await searchSong(input);
+    displayTracks(tracks);
+  }
+}
+
+window.onload = function() {
   if (!parseAccessToken()) {
     accessToken = localStorage.getItem('spotify_access_token');
     if (accessToken) {
@@ -365,44 +442,22 @@ window.onload = function () {
     }
   }
 
-  // Search button functionality
-  document.getElementById('searchBtn').addEventListener('click', async () => {
+  // Add event listeners
+  document.getElementById('searchBtn').addEventListener('click', handleSearch);
+  
+  document.getElementById('nextBtn').addEventListener('click', async () => {
     const input = document.getElementById('songInput').value.trim();
-    if (!input) {
-      updateAuthStatus('Please enter a song name or Spotify link', true);
-      return;
-    }
-
-    const spotifyLinkRegex = /https?:\/\/open\.spotify\.com\/(track|album|playlist)\/([a-zA-Z0-9]+)/;
-    const match = input.match(spotifyLinkRegex);
-
-    if (match) {
-      // If input is a Spotify link
-      const type = match[1]; // "track", "album", or "playlist"
-      const id = match[2];   // Spotify ID
-      if (type === 'track') {
-        await fetchTrackById(id);
-      } else if (type === 'playlist') {
-        await fetchPlaylistById(id);
-      } else if (type === 'album') {
-        await fetchAlbumById(id);
-      }
-    } else {
-      // If input is a song name
-      const tracks = await searchSong(input);
-      displayTracks(tracks);
+    const spotifyUrl = cleanSpotifyUrl(input);
+    
+    if (spotifyUrl && spotifyUrl.type === 'playlist') {
+      await fetchPlaylistById(spotifyUrl.id);
     }
   });
 
-  // Next button for pagination
-  document.getElementById('nextBtn').addEventListener('click', async () => {
-    const input = document.getElementById('songInput').value.trim();
-    const spotifyLinkRegex = /https?:\/\/open\.spotify\.com\/playlist\/([a-zA-Z0-9]+)/;
-    const match = input.match(spotifyLinkRegex);
-
-    if (match) {
-      const playlistId = match[1];
-      await fetchPlaylistById(playlistId);
+  // Add enter key support
+  document.getElementById('songInput').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      handleSearch();
     }
   });
 };
