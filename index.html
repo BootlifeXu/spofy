@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -199,10 +200,10 @@ body {
   <button id="nextBtn" style="display: none;">Next</button>
 
   <script>
-const clientId = 'cc1434a8593d4c71b9ad56af9b578d98'; // Replace with your actual Spotify Client ID
-const redirectUri = 'https://dazzling-bavarois-ed00a0.netlify.app'; // Replace with your actual Redirect URI
+const clientId = 'cc1434a8593d4c71b9ad56af9b578d98'; // Your actual Spotify Client ID
+const redirectUri = 'https://dazzling-bavarois-ed00a0.netlify.app'; // Your actual Redirect URI
 let accessToken = null;
-let offset = 0; // Pagination offset
+let offset = 0; // Pagination offset for playlists
 
 function updateAuthStatus(message, isError = false) {
   const statusEl = document.getElementById('auth-status');
@@ -212,7 +213,9 @@ function updateAuthStatus(message, isError = false) {
 
 function initiateSpotifyAuth() {
   const scopes = [
-    'user-library-read', // This scope is required to access saved tracks
+    'user-library-read',
+    'playlist-read-private',
+    'playlist-read-collaborative',
     'user-read-playback-state',
     'user-modify-playback-state',
     'streaming',
@@ -244,38 +247,6 @@ function parseAccessToken() {
   return false;
 }
 
-async function searchSong(songName) {
-  if (!accessToken) {
-    updateAuthStatus('Authentication required', true);
-    initiateSpotifyAuth();
-    return [];
-  }
-
-  try {
-    const response = await fetch(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(songName)}&type=track&limit=10&offset=${offset}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      }
-    );
-
-    if (!response.ok) {
-      const responseText = await response.text();
-      console.error('Search Error Details:', responseText);
-      throw new Error('Search failed');
-    }
-
-    const data = await response.json();
-    return data.tracks.items;
-  } catch (error) {
-    updateAuthStatus('Search error: ' + error.message, true);
-    return [];
-  }
-}
-
-// Fetch track by ID
 async function fetchTrackById(trackId) {
   if (!accessToken) {
     updateAuthStatus('Authentication required', true);
@@ -297,7 +268,6 @@ async function fetchTrackById(trackId) {
   }
 }
 
-// Fetch album tracks by album ID
 async function fetchAlbumById(albumId) {
   if (!accessToken) {
     updateAuthStatus('Authentication required', true);
@@ -316,14 +286,12 @@ async function fetchAlbumById(albumId) {
     const tracks = data.items; // Extract tracks from the album
     displayTracks(tracks);
 
-    // No pagination needed for albums (typically less than 50 tracks)
-    document.getElementById('nextBtn').style.display = 'none';
+    document.getElementById('nextBtn').style.display = 'none'; // Disable pagination for albums
   } catch (error) {
     updateAuthStatus('Error fetching album: ' + error.message, true);
   }
 }
 
-// Fetch playlist tracks by playlist ID
 async function fetchPlaylistById(playlistId) {
   if (!accessToken) {
     updateAuthStatus('Authentication required', true);
