@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -298,7 +297,33 @@ async function fetchTrackById(trackId) {
   }
 }
 
-// Fetch playlist by ID
+// Fetch album tracks by album ID
+async function fetchAlbumById(albumId) {
+  if (!accessToken) {
+    updateAuthStatus('Authentication required', true);
+    initiateSpotifyAuth();
+    return;
+  }
+
+  try {
+    const response = await fetch(`https://api.spotify.com/v1/albums/${albumId}/tracks`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+    });
+
+    if (!response.ok) throw new Error('Failed to fetch album details');
+
+    const data = await response.json();
+    const tracks = data.items; // Extract tracks from the album
+    displayTracks(tracks);
+
+    // No pagination needed for albums (typically less than 50 tracks)
+    document.getElementById('nextBtn').style.display = 'none';
+  } catch (error) {
+    updateAuthStatus('Error fetching album: ' + error.message, true);
+  }
+}
+
+// Fetch playlist tracks by playlist ID
 async function fetchPlaylistById(playlistId) {
   if (!accessToken) {
     updateAuthStatus('Authentication required', true);
@@ -307,7 +332,7 @@ async function fetchPlaylistById(playlistId) {
   }
 
   try {
-    const response = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50`, {
+    const response = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50&offset=${offset}`, {
       headers: { 'Authorization': `Bearer ${accessToken}` },
     });
 
@@ -316,7 +341,7 @@ async function fetchPlaylistById(playlistId) {
     const data = await response.json();
     const tracks = data.items.map(item => item.track); // Extract tracks
     displayTracks(tracks);
-    
+
     // Handle pagination if there are more tracks
     if (data.next) {
       offset += 50; // Increase offset for next page
@@ -380,17 +405,19 @@ window.onload = function () {
       return;
     }
 
-    const spotifyLinkRegex = /https?:\/\/open\.spotify\.com\/(track|playlist)\/([a-zA-Z0-9]+)/;
+    const spotifyLinkRegex = /https?:\/\/open\.spotify\.com\/(track|album|playlist)\/([a-zA-Z0-9]+)/;
     const match = input.match(spotifyLinkRegex);
 
     if (match) {
       // If input is a Spotify link
-      const type = match[1]; // "track" or "playlist"
+      const type = match[1]; // "track", "album", or "playlist"
       const id = match[2];   // Spotify ID
       if (type === 'track') {
         await fetchTrackById(id);
       } else if (type === 'playlist') {
         await fetchPlaylistById(id);
+      } else if (type === 'album') {
+        await fetchAlbumById(id);
       }
     } else {
       // If input is a song name
@@ -409,14 +436,6 @@ window.onload = function () {
       const playlistId = match[1];
       await fetchPlaylistById(playlistId);
     }
-  });
-
-  // Hamburger menu functionality
-  document.getElementById('hamburgerIcon').addEventListener('click', async () => {
-    const menuContainer = document.getElementById('menuContainer');
-    menuContainer.style.display = menuContainer.style.display === 'block' ? 'none' : 'block';
-
-    displaySavedTracks(); // Fetch and display saved tracks in the menu
   });
 };
   </script>
