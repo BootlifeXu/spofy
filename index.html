@@ -461,6 +461,108 @@ window.onload = function() {
     }
   });
 };
+// In cleanSpotifyUrl function:
+function cleanSpotifyUrl(url) {
+  console.log('Original URL:', url);
+  const matches = url.match(/spotify\.com\/(track|album|playlist)\/([a-zA-Z0-9]+)/);
+  console.log('URL matches:', matches);
+  if (matches) {
+    const result = {
+      type: matches[1],
+      id: matches[2]
+    };
+    console.log('Cleaned URL result:', result);
+    return result;
+  }
+  console.log('No matches found in URL');
+  return null;
+}
+
+// In fetchPlaylistById function:
+async function fetchPlaylistById(playlistId) {
+  console.log('Fetching playlist with ID:', playlistId);
+  console.log('Current offset:', offset);
+  
+  if (!accessToken) {
+    console.log('No access token found');
+    updateAuthStatus('Authentication required', true);
+    initiateSpotifyAuth();
+    return;
+  }
+
+  try {
+    const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50&offset=${offset}`;
+    console.log('Making request to:', url);
+    
+    const response = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+
+    console.log('Response status:', response.status);
+    
+    if (!response.ok) {
+      console.log('Response not OK:', await response.text());
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log('Received playlist data:', data);
+    
+    // Filter out null tracks and map to the track object
+    const tracks = data.items
+      .filter(item => item.track != null)
+      .map(item => item.track);
+    
+    console.log('Processed tracks:', tracks);
+    displayTracks(tracks);
+
+    // Show/hide next button based on whether there are more tracks
+    const nextBtn = document.getElementById('nextBtn');
+    nextBtn.style.display = data.next ? 'block' : 'none';
+
+  } catch (error) {
+    console.error('Error in fetchPlaylistById:', error);
+    updateAuthStatus(`Error fetching playlist: ${error.message}`, true);
+  }
+}
+
+// In handleSearch function:
+async function handleSearch() {
+  const input = document.getElementById('songInput').value.trim();
+  console.log('Search input:', input);
+  
+  if (!input) {
+    updateAuthStatus('Please enter a song name or Spotify link', true);
+    return;
+  }
+
+  const spotifyUrl = cleanSpotifyUrl(input);
+  console.log('Processed Spotify URL:', spotifyUrl);
+  
+  if (spotifyUrl) {
+    offset = 0; // Reset offset when starting a new search
+    console.log('URL type:', spotifyUrl.type);
+    
+    switch (spotifyUrl.type) {
+      case 'playlist':
+        console.log('Handling playlist URL');
+        await fetchPlaylistById(spotifyUrl.id);
+        break;
+      case 'track':
+        console.log('Handling track URL');
+        await fetchTrackById(spotifyUrl.id);
+        break;
+      case 'album':
+        console.log('Handling album URL');
+        await fetchAlbumById(spotifyUrl.id);
+        break;
+    }
+  } else {
+    console.log('Performing regular search');
+    const tracks = await searchSong(input);
+    displayTracks(tracks);
+  }
+}
   </script>
 </body>
 </html>
